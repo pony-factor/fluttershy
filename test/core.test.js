@@ -23,7 +23,7 @@ async function setup(duffel=makeDuffel(),enabled=true){
   const server=httpServer(app);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base=`http://127.0.0.1:${server.address().port}`;
   async function api(path,method='GET',value,authenticated=true){const response=await fetch(base+path,{method,headers:{...(authenticated?{Authorization:`Bearer ${'a'.repeat(32)}`}:{})},...(value?{body:JSON.stringify(value)}:{})});return {status:response.status,body:await response.json()};}
-  return {...db,app,server,api,close:async()=>{app.close();await new Promise(r=>server.close(r));rmSync(db.dir,{recursive:true,force:true});}};
+  return {...db,app,server,base,api,close:async()=>{app.close();await new Promise(r=>server.close(r));rmSync(db.dir,{recursive:true,force:true});}};
 }
 test('vault encrypts records; does not leak personal content or account numbers',()=>{
   const db=localStore();try{db.store.mutate(s=>{s.travelers.me={given_name:'PRIVATE NAME',loyalty_accounts:[{airline_iata_code:'AA',account_number:'PRIVATE123'}]};});
@@ -88,5 +88,36 @@ test('ambiguous order failure is non-retryable and recorded for reconciliation',
   assert.equal((await s.api('/api/bookings/confirm','POST',req)).status,502);
   assert.equal((await s.api('/api/bookings/confirm','POST',req)).status,409);
   assert.equal(orderCalls,1);assert.equal((await s.api('/api/state')).body.bookings[quote.quote_id].status,'requires_reconciliation');
+ }finally{await s.close();}
+});
+
+test('calendar export uses date-only times and requires authorization',async()=>{
+ const s=await setup();try{
+  await s.api('/api/travelers/me','PUT',{given_name:'Sam',family_name:'Smith',born_on:'1991-01-01',email:'sam@example.com',phone_number:'+12025550123',gender:'f',loyalty_accounts:[]});
+  const q=(await s.api('/api/bookings/quote','POST',{offer_id:'off_123',traveler_ids:['me']})).body;
+  await s.api('/api/bookings/confirm','POST',{quote_id:q.quote_id,approval:q.approval_phrase,accept_terms:true});
+  const denied=await fetch(`${s.base}/api/bookings/${q.quote_id}/calendar.ics`);assert.equal(denied.status,401);
+  const result=await fetch(`${s.base}/api/bookings/${q.quote_id}/calendar.ics`,{headers:{Authorization:`Bearer ${'a'.repeat(32)}`}});
+  assert.equal(result.status,200);const text=await result.text();assert.match(text,/BEGIN:VCALENDAR/);assert.match(text,/DTSTART;VALUE=DATE:/);assert.match(text,/ABC123/);
+ }finally{await s.close();}
+});
+test('a changed traveler invalidates approval instead of changing passenger silently',async()=>{
+ const s=await setup();try{
+  const p={given_name:'Sam',family_name:'Smith',born_on:'1991-01-01',email:'sam@example.com',phone_number:'+12025550123',gender:'f',loyalty_accounts:[]};
+  await s.api('/api/travelers/me','PUT',p);
+  const q=(await s.api('/api/bookings/quote','POST',{offer_id:'off_123',traveler_ids:['me']})).body;
+  await s.api('/api/travelers/me','PUT',{...p,family_name:'Jones'});
+  const confirmation=await s.api('/api/bookings/confirm','POST',{quote_id:q.quote_id,approval:q.approval_phrase,accept_terms:true});
+  assert.equal(confirmation.status,409);assert.match(confirmation.body.error,/Traveler details changed/);
+ }finally{await s.close();}
+});
+test('concurrent duplicate confirmations cannot each create an order',async()=>{
+ const d=makeDuffel();let orderCount=0;d.order=async()=>{orderCount++;await new Promise(r=>setTimeout(r,35));return {id:'ord',booking_reference:'SINGLE'};};
+ const s=await setup(d);try{
+  await s.api('/api/travelers/me','PUT',{given_name:'Sam',family_name:'Smith',born_on:'1991-01-01',email:'sam@example.com',phone_number:'+12025550123',gender:'f',loyalty_accounts:[]});
+  const q=(await s.api('/api/bookings/quote','POST',{offer_id:'off_123',traveler_ids:['me']})).body;
+  const request={quote_id:q.quote_id,approval:q.approval_phrase,accept_terms:true};
+  const results=await Promise.all([s.api('/api/bookings/confirm','POST',request),s.api('/api/bookings/confirm','POST',request)]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);assert.equal(orderCount,1);
  }finally{await s.close();}
 });

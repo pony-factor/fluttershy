@@ -30,7 +30,20 @@ async function reload() {
     const del=text('button','Remove','secondary');del.onclick=()=>run(async()=>{await api(`/api/watches/${w.id}`,'DELETE');await reload();});append(item,b,del);append(watches,item);
   }
   const bookings=$('bookings');bookings.replaceChildren();
-  for(const b of Object.values(data.bookings))append(bookings,text('div',`${b.status.toUpperCase()} · ${b.booking_reference||b.offer_id} · ${format(b.amount,b.currency)}${b.status==='requires_reconciliation'?' · Check Duffel before retrying':''}`,'item'));
+  for(const b of Object.values(data.bookings)){
+    const row=text('div',`${b.status.toUpperCase()} · ${b.booking_reference||b.offer_id} · ${format(b.amount,b.currency)}${b.status==='requires_reconciliation'?' · Check Duffel before retrying':''}`,'item');
+    if(b.status==='confirmed'){
+      const calendar=text('button','Export calendar (.ics)','secondary');
+      calendar.onclick=()=>run(async()=>{
+        const response=await fetch(`/api/bookings/${encodeURIComponent(b.quote_id)}/calendar.ics`,{headers:{Authorization:`Bearer ${token}`}});
+        if(!response.ok)throw Error('Calendar export failed');
+        const blob=await response.blob(),url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download=`fluttershy-${b.booking_reference||'trip'}.ics`;a.click();
+        setTimeout(()=>URL.revokeObjectURL(url),15000);
+      });row.append(calendar);
+    }
+    bookings.append(row);
+  }
 }
 async function run(fn) {try{msg('');await fn();}catch(e){msg(e.message);}}
 $('connect-form').onsubmit=e=>{e.preventDefault();token=new FormData(e.currentTarget).get('token');sessionStorage.setItem('fluttershy_api_token',token);run(async()=>{await reload();msg('Connected');});};

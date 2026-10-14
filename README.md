@@ -47,6 +47,7 @@ Send `Authorization: Bearer <API_TOKEN>` with all `/api/*` requests. Browser int
 | POST / GET | `/api/awards`, `/api/compare?origin=JFK&destination=LAX&departure_date=YYYY-MM-DD` | User-entered award quote and cost comparison |
 | POST | `/api/bookings/quote` | Verify fare, apply saved loyalty identifiers, issue short-lived approval phrase |
 | POST | `/api/bookings/confirm` | Check approval phrase + fare terms, reprice and create one Duffel instant order |
+| GET | `/api/bookings/:quote_id/calendar.ics` | Export confirmed trip date-only calendar events |
 
 Example:
 
@@ -64,7 +65,7 @@ curl -H "Authorization: Bearer $API_TOKEN" -H 'Content-Type: application/json' \
 - A miles valuation estimate is **not** guaranteed award availability. Award quotes are user-supplied and are not bookable through this Duffel integration.
 - Flight offers are time-limited and can change; the checkout rejects changed totals or itineraries instead of silently paying more.
 - Refundability, baggage, government fees, ticketing rules and cancellation terms vary by ticket. Before production checkout, add explicit fare-condition disclosure fetched from the supplier for each booked offer and a compliant customer payment collection flow.
-- Calendar: a `.ics` export and Google Calendar OAuth sync remain planned, not currently connected.
+- Confirmed bookings can be exported as `.ics` calendar files from the browser. Events are **date-only** to avoid assigning an incorrect timezone to airport-local departure times; exact local flight times are included in the event description. Google Calendar OAuth sync remains planned, not currently connected.
 
 ### Relevant primary API references
 

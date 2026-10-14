@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual, createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -11,10 +11,29 @@ const staticPaths = new Map([['/','index.html'],['/app.js','app.js'],['/style.cs
 const mime = {'index.html':'text/html; charset=utf-8','app.js':'text/javascript; charset=utf-8','style.css':'text/css; charset=utf-8'};
 const TTL = 5*60*1000;
 function mask(n) { return n ? `••••${n.slice(-4)}` : null; }
+function fingerprint(value) {return createHash('sha256').update(JSON.stringify(value)).digest('hex');}
+function escapeIcs(value) {return String(value ?? '').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');}
+function icsBooking(booking) {
+  // Duffel segment timestamps may be in airport-local time without UTC offsets.
+  // Export date-only events instead of assigning the wrong timezone to flights.
+  const stamp=new Date(booking.attempted_at).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
+  const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Fluttershy//Flight Itinerary//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+  (booking.legs||[]).forEach((leg,i)=>{
+    const iso=leg.segments?.[0]?.departing_at?.slice(0,10);
+    if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+    const start=iso.replace(/-/g,'');
+    const end=new Date(Date.parse(`${iso}T12:00:00Z`)+86400000).toISOString().slice(0,10).replace(/-/g,'');
+    const details=(leg.segments||[]).map(s=>`${s.operating_carrier} ${s.flight_number||''} ${s.origin}-${s.destination}: ${s.departing_at||''} to ${s.arriving_at||''}`);
+    lines.push('BEGIN:VEVENT',`UID:${booking.quote_id}-${i}@fluttershy.local`,`DTSTAMP:${stamp}`,`DTSTART;VALUE=DATE:${start}`,`DTEND;VALUE=DATE:${end}`,
+      `SUMMARY:${escapeIcs(`Flight ${leg.origin} → ${leg.destination}`)}`,
+      `DESCRIPTION:${escapeIcs(`Booking reference ${booking.booking_reference}. Local times: ${details.join(' | ')}. Verify times with airline.`)}`,'END:VEVENT');
+  });
+  return lines.concat('END:VCALENDAR','').join('\r\n');
+}
 function publicTraveler(t) { return {...t, loyalty_accounts:t.loyalty_accounts.map(a=>({...a,account_number:mask(a.account_number)}))}; }
 function safeView(s) { return {
   profile:s.profile,travelers:Object.fromEntries(Object.entries(s.travelers).map(([id,t])=>[id,publicTraveler(t)])),
-  payment_tokens:Object.fromEntries(Object.entries(s.payment_tokens).map(([id,p])=>[id,{provider:p.provider,label:p.label,last4:p.last4}])),
+  payment_tokens:Object.fromEntries(Object.entries(s.payment_tokens).map(([id,p])=>[id,{provider:p.provider,label:p.label,last4:p.last4}])) ,
   accounts:Object.fromEntries(Object.entries(s.accounts).map(([id,a])=>[id,{provider:a.provider,label:a.label,connected:false}])),
   watches:s.watches, awards:s.awards,bookings:s.bookings
 }; }
@@ -92,12 +111,18 @@ export function createApplication({store,duffel,apiToken,enableLiveBooking=false
       if(!url.pathname.startsWith('/api/')) throw new InputError('Not found',404);
       if(!secureEqual((req.headers.authorization || '').replace(/^Bearer /,''),apiToken)) throw new InputError('Unauthorized',401);
       const path=url.pathname;
+      let m;
       if(req.method==='GET' && path==='/api/health') return send(res,200,{status:'ok',duffel_configured:!!process.env.DUFFEL_ACCESS_TOKEN,live_booking_enabled:enableLiveBooking});
       if(req.method==='GET' && path==='/api/state') return send(res,200,safeView(state()));
+      if(req.method==='GET' && (m=/^\/api\/bookings\/([a-zA-Z0-9_-]+)\/calendar\.ics$/.exec(path))) {
+        const booking=state().bookings[m[1]];
+        assert(booking?.status==='confirmed','Confirmed booking not found',404);
+        res.writeHead(200,{'Content-Type':'text/calendar; charset=utf-8','Content-Disposition':'attachment; filename="fluttershy-trip.ics"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+        res.end(icsBooking(booking));return;
+      }
       if(req.method==='PUT' && path==='/api/profile') {
         const p=profileInput(await body(req));store.mutate(s=>{s.profile=p;});return send(res,200,p);
       }
-      let m;
       if(req.method==='PUT' && (m=/^\/api\/travelers\/([a-zA-Z0-9_-]+)$/.exec(path))) {
         const id=ident(m[1]),v=travelerInput(await body(req));store.mutate(s=>{s.travelers[id]=v;});return send(res,200,publicTraveler(v));
       }
@@ -157,7 +182,8 @@ export function createApplication({store,duffel,apiToken,enableLiveBooking=false
         const quoteId=randomUUID(),expires_at=Math.min(now()+TTL,Date.parse(offer.expires_at)-30_000);
         assert(expires_at>now(),'Offer expired',409);
         const quote={id:quoteId,offer_id:offerId,traveler_ids:ids,created_at:now(),expires_at,amount:offer.total_amount,currency:offer.total_currency,
-          signature:JSON.stringify({id:offer.id,amount:offer.total_amount,currency:offer.total_currency,legs:flat.legs,airlines:flat.airline_codes}),offer:flat};
+          signature:JSON.stringify({id:offer.id,amount:offer.total_amount,currency:offer.total_currency,legs:flat.legs,airlines:flat.airline_codes}),
+          travelers_fingerprint:fingerprint(ts),offer:flat};
         store.mutate(s=>{s.quotes[quoteId]=quote;for(const [id,q] of Object.entries(s.quotes))if(q.expires_at<now()-86400000)delete s.quotes[id];});
         return send(res,200,{quote_id:quoteId,expires_at,offer:flat,approval_phrase:`BOOK ${quote.amount} ${quote.currency}`,
           payment_source:'Duffel balance (not saved card tokens)',notice:'Airline terms, refundability, change fees and baggage rules must be reviewed before purchase.'});
@@ -167,24 +193,34 @@ export function createApplication({store,duffel,apiToken,enableLiveBooking=false
         assert(q,'Quote not found',404);assert(now()<q.expires_at,'Quote expired',409);
         assert(v.approval===`BOOK ${q.amount} ${q.currency}`,'Explicit price confirmation required',400);
         assert(v.accept_terms===true,'You must review and accept the airline fare conditions',400);
-        assert(!s.bookings[id],'Booking already attempted. Check status; never retry blindly.',409);
         assert(enableLiveBooking,'Booking disabled; set ENABLE_LIVE_BOOKING=true after configuring Duffel balance',403);
-        let offer=await duffel.offer(q.offer_id);
-        const flat=flattenOffer(offer);
-        const signature=JSON.stringify({id:offer.id,amount:offer.total_amount,currency:offer.total_currency,legs:flat.legs,airlines:flat.airline_codes});
-        assert(signature===q.signature,'Offer changed: request and approve a new quote',409);
-        assert(allowed(flat,state().profile),'Offer now violates preferences',409);
-        assert(Date.parse(offer.expires_at)>now()+15_000,'Offer expired',409);
-        const ts=q.traveler_ids.map(t=>state().travelers[t]);assert(ts.every(Boolean),'Traveler details changed',409);
-        // Durable attempt marker BEFORE network side effect. Ambiguous failures cannot be blindly retried.
-        store.mutate(s=>{s.bookings[id]={quote_id:id,offer_id:q.offer_id,status:'submitting',amount:q.amount,currency:q.currency,attempted_at:now()};});
-        try{
+        const ts=q.traveler_ids.map(t=>s.travelers[t]);
+        assert(ts.every(Boolean) && fingerprint(ts)===q.travelers_fingerprint,'Traveler details changed; request a new quote',409);
+        // Atomically claim the quote BEFORE any asynchronous provider call, so two
+        // concurrent confirm requests cannot each create an order.
+        store.mutate(next=>{
+          assert(!next.bookings[id],'Booking already attempted. Check status; never retry blindly.',409);
+          next.bookings[id]={quote_id:id,offer_id:q.offer_id,status:'checking',amount:q.amount,currency:q.currency,attempted_at:now()};
+        });
+        let offer;
+        try {
+          offer=await duffel.offer(q.offer_id);
+          const flat=flattenOffer(offer);
+          const signature=JSON.stringify({id:offer.id,amount:offer.total_amount,currency:offer.total_currency,legs:flat.legs,airlines:flat.airline_codes});
+          assert(signature===q.signature,'Offer changed: request and approve a new quote',409);
+          assert(allowed(flat,state().profile),'Offer now violates preferences',409);
+          assert(Date.parse(offer.expires_at)>now()+15_000,'Offer expired',409);
+          store.mutate(s=>{s.bookings[id].status='submitting';});
           const order=await duffel.order(offer,ts);
           store.mutate(s=>{s.bookings[id]={...s.bookings[id],status:'confirmed',order_id:order.id,booking_reference:order.booking_reference,
-            total_amount:order.total_amount,total_currency:order.total_currency,operating_carriers:flat.operating_carriers,legs:flat.legs};});
+            total_amount:order.total_amount,total_currency:order.total_currency,operating_carriers:flattenOffer(offer).operating_carriers,legs:flattenOffer(offer).legs};});
           return send(res,201,state().bookings[id]);
-        }catch{
-          store.mutate(s=>{s.bookings[id]={...s.bookings[id],status:'requires_reconciliation'};});
+        } catch(e) {
+          // A known pre-submission rejection is not a payment attempt; the quote
+          // still cannot be reused. An unknown provider failure needs manual reconciliation.
+          const status=e instanceof InputError && e.status===409 ? 'stale_quote' : 'requires_reconciliation';
+          store.mutate(s=>{s.bookings[id]={...s.bookings[id],status};});
+          if(status==='stale_quote')throw e;
           throw new InputError('Provider response uncertain. Check Duffel orders before any new attempt.',502);
         }
       }

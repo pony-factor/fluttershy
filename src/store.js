@@ -23,14 +23,14 @@ export function createStore({file, key}) {
   const initial = () => ({schema:1, profile:profileInput({}), travelers:{}, payment_tokens:{}, accounts:{}, watches:{}, cache:{}, quotes:{}, bookings:{}, awards:{}});
   let state = existsSync(filepath) ? decrypt(JSON.parse(readFileSync(filepath,'utf8')),key) : initial();
   assert(state.schema === 1, 'Unsupported database schema', 500);
-  function persist() {
+  function persist(next) {
     mkdirSync(dirname(filepath), {recursive:true, mode:0o700});
     const tmp = `${filepath}.${process.pid}.${randomBytes(5).toString('hex')}.tmp`;
-    writeFileSync(tmp, JSON.stringify(encrypt(state,key)), {flag:'wx', mode:0o600});
+    writeFileSync(tmp, JSON.stringify(encrypt(next,key)), {flag:'wx', mode:0o600});
     chmodSync(tmp,0o600); renameSync(tmp,filepath);
   }
   return {
     get() { return structuredClone(state); },
-    mutate(fn) { const next=structuredClone(state); const output=fn(next); state=next; persist(); return output; }
+    mutate(fn) { const next=structuredClone(state); const output=fn(next); persist(next); state=next; return output; }
   };
 }

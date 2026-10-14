@@ -46,10 +46,12 @@ export function profileInput(v) {
   assert(v && typeof v === 'object' && !Array.isArray(v), 'Expected preferences object');
   const mode = v.mode ?? 'balanced';
   assert(['balanced','cheapest','fastest','fewest_stops'].includes(mode),'Invalid optimization mode');
-  const excluded_airlines = (v.excluded_airlines ?? ['F9']).map(airlineCode);
-  assert(Array.isArray(v.excluded_airlines ?? []) && excluded_airlines.length <= 30, 'Invalid excluded airlines');
+  const rawExcluded = v.excluded_airlines ?? ['F9'];
+  assert(Array.isArray(rawExcluded) && rawExcluded.length <= 30, 'Invalid excluded airlines');
+  const excluded_airlines = rawExcluded.map(airlineCode);
   const avoid_ulcc = v.avoid_ulcc ?? true;
   assert(typeof avoid_ulcc === 'boolean', 'Invalid avoid_ulcc');
+  assert(v.nonstops_only === undefined || typeof v.nonstops_only === 'boolean', 'Invalid nonstops_only');
   return {
     mode, excluded_airlines: [...new Set(excluded_airlines)], avoid_ulcc,
     miles_cents_per_point: number(v.miles_cents_per_point ?? 1.4, 'miles_cents_per_point', 0.01, 20),
