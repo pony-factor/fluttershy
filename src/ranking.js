@@ -19,7 +19,7 @@ export function flattenOffer(o) {
   };
 }
 export function scoreOffer(o, p) {
-  const dollars=o.kind==='award' ? o.taxes_usd+o.miles*p.miles_cents_per_point/100 : o.amount;
+  const dollars=o.kind==='award' ? (o.taxes_usd===null || o.taxes_usd===undefined ? Infinity : o.taxes_usd+o.miles*p.miles_cents_per_point/100) : o.amount;
   const duration=o.duration_minutes||720, stops=o.stops||0;
   const metric={cheapest:dollars,fastest:duration+stops*60, fewest_stops:stops*10000+duration,balanced:dollars+duration*.16+stops*65};
   return metric[p.mode] ?? metric.balanced;
@@ -35,7 +35,8 @@ export function rankOffers(offers,p) {
 }
 export function compareAwards(cash, awards, p) {
   const bestCash=rankOffers(cash.filter(o=>o.currency==='USD'),p)[0];
-  return awards.map(a=>({ ...a, effective_usd:Math.round((a.taxes_usd+a.miles*p.miles_cents_per_point/100)*100)/100,
-    savings_vs_cash_usd:bestCash?Math.round((bestCash.amount-a.taxes_usd-a.miles*p.miles_cents_per_point/100)*100)/100:null,
+  return awards.map(a=>({ ...a,
+    effective_usd:a.taxes_usd===null || a.taxes_usd===undefined ? null : Math.round((a.taxes_usd+a.miles*p.miles_cents_per_point/100)*100)/100,
+    savings_vs_cash_usd:bestCash && a.taxes_usd!==null && a.taxes_usd!==undefined ?Math.round((bestCash.amount-a.taxes_usd-a.miles*p.miles_cents_per_point/100)*100)/100:null,
     redemption_source:'user_supplied', bookable_here:false }));
 }

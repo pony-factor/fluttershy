@@ -58,7 +58,7 @@ function findAward(v) {
     program:text(v.program,'program',60), notes:v.notes ? text(v.notes,'notes',160) : '',stops:number(v.stops ?? 0,'stops',0,10),
     duration_minutes:number(v.duration_minutes ?? 0,'duration_minutes',0,10000), imported_at:new Date().toISOString()};
 }
-export function createApplication({store,duffel,apiToken,enableLiveBooking=false,watchIntervalMinutes=30,now=()=>Date.now()}) {
+export function createApplication({store,duffel,seats=null,apiToken,enableLiveBooking=false,watchIntervalMinutes=30,now=()=>Date.now()}) {
   assert(typeof apiToken==='string' && apiToken.length>=24,'API_TOKEN must contain at least 24 characters',500);
   const inflight = new Map();
   function state() {return store.get();}
@@ -112,7 +112,7 @@ export function createApplication({store,duffel,apiToken,enableLiveBooking=false
       if(!secureEqual((req.headers.authorization || '').replace(/^Bearer /,''),apiToken)) throw new InputError('Unauthorized',401);
       const path=url.pathname;
       let m;
-      if(req.method==='GET' && path==='/api/health') return send(res,200,{status:'ok',duffel_configured:!!process.env.DUFFEL_ACCESS_TOKEN,live_booking_enabled:enableLiveBooking});
+      if(req.method==='GET' && path==='/api/health') return send(res,200,{status:'ok',duffel_configured:!!process.env.DUFFEL_ACCESS_TOKEN,seats_aero_configured:!!seats?.configured,live_booking_enabled:enableLiveBooking});
       if(req.method==='GET' && path==='/api/state') return send(res,200,safeView(state()));
       if(req.method==='GET' && (m=/^\/api\/bookings\/([a-zA-Z0-9_-]+)\/calendar\.ics$/.exec(path))) {
         const booking=state().bookings[m[1]];
@@ -146,14 +146,30 @@ export function createApplication({store,duffel,apiToken,enableLiveBooking=false
         store.mutate(s=>{delete s.accounts[m[1]];});return send(res,200,{deleted:true});
       }
       if(req.method==='POST' && path==='/api/search') return send(res,200,await search(await body(req)));
+      if(req.method==='POST' && path==='/api/award-search') {
+        assert(seats?.configured,'Award search provider not configured; add SEATS_AERO_API_KEY',503);
+        const q=searchInput(await body(req));
+        assert(q.adults===1 && !q.return_date,'Award lookup currently supports one adult and one-way travel',400);
+        const key=JSON.stringify(q),cache=state().award_cache[key];
+        if(cache && now()-cache.fetched_at<30*60_000)
+          return send(res,200,{...cache,offers:compareAwards([],rankOffers(cache.offers,state().profile),state().profile),cached:true});
+        const result=await seats.search(q);
+        store.mutate(s=>{
+          s.award_cache[key]={...result,fetched_at:now()};
+          const keys=Object.keys(s.award_cache).sort((a,b)=>s.award_cache[b].fetched_at-s.award_cache[a].fetched_at);
+          for(const k of keys.slice(30))delete s.award_cache[k];
+        });
+        return send(res,200,{...result,offers:compareAwards([],rankOffers(result.offers,state().profile),state().profile),cached:false});
+      }
       if(req.method==='POST' && path==='/api/awards') {
         const a=findAward(await body(req));store.mutate(s=>{s.awards[a.id]=a;});return send(res,201,a);
       }
       if(req.method==='GET' && path==='/api/compare') {
         const trip=searchInput({origin:url.searchParams.get('origin'),destination:url.searchParams.get('destination'),departure_date:url.searchParams.get('departure_date')});
         const s=state(),awards=Object.values(s.awards).filter(a=>a.route===`${trip.origin}-${trip.destination}`&&a.departure_date===trip.departure_date);
-        const cash=Object.values(s.cache).filter(c=>c.query.origin===trip.origin&&c.query.destination===trip.destination&&c.query.departure_date===trip.departure_date).flatMap(c=>c.offers);
-        return send(res,200,{awards:compareAwards(cash,awards,s.profile),cash_cheapest_usd:rankOffers(cash.filter(o=>o.currency==='USD'),s.profile)[0]||null});
+        const cash=Object.values(s.cache).filter(c=>c.query.origin===trip.origin&&c.query.destination===trip.destination&&c.query.departure_date===trip.departure_date&&c.query.adults===1&&!c.query.return_date).flatMap(c=>c.offers);
+        const found=Object.values(s.award_cache||{}).filter(c=>c.query.origin===trip.origin&&c.query.destination===trip.destination&&c.query.departure_date===trip.departure_date).flatMap(c=>c.offers);
+        return send(res,200,{awards:compareAwards(cash,rankOffers([...awards,...found],s.profile),s.profile),cash_cheapest_usd:rankOffers(cash.filter(o=>o.currency==='USD'),s.profile)[0]||null});
       }
       if(req.method==='POST' && path==='/api/watches') {
         const v=await body(req),q=searchInput(v.query),max_price=number(v.max_price,'max_price',1,100000);

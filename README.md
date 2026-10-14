@@ -8,11 +8,11 @@ A **self-hosted flight concierge** with preference-aware flight search, encrypte
 - **Persistent background search:** encrypted watchlists, cached recent searches (5 minutes), deduplicated concurrent searches and periodic re-searches (default: 30 minutes). Watches run only while the service is running; no auto-purchase. Watch matching is currency-specific and price changes must be rechecked before any order.
 - **Traveler vault:** AES-256-GCM encrypted local data including saved traveler identity, loyalty numbers, linked-account token references and payment-provider **token references only**. Airline passwords, raw payment card numbers and CVVs are not accepted. Token references are **not** payment instruments until a compatible provider integration is implemented. Vault never sends raw saved values back to the browser.
 - **Cash booking:** server-side fresh-offer retrieval, optional loyalty-profile enrichment and repricing, review quote expiring after five minutes, exact-price acknowledgement and a separate explicit confirmation. A persisted submission marker prevents accidental duplicate orders after ambiguous provider errors. Uses the **Duffel balance** payment method only. Disabled unless `ENABLE_LIVE_BOOKING=true`.
-- **Miles comparison:** import verified award-availability quotes manually and compare taxes + (miles × user-selected cents per mile) against available USD cash fares. No invented points availability. **Award searches, miles transfers, award bookings, online card charges and airline-account OAuth are not implemented.** They require contracted APIs, booking permissions and/or payment partners.
+- **Miles comparison:** optionally search **cached** award availability through the Seats.aero Partner API (`SEATS_AERO_API_KEY` required) across supported mileage programs, or import your own verified award quote. Compare known USD taxes + (miles × user-selected cents per mile) against corresponding one-adult, one-way USD cash fares. If taxes are unknown or in another currency, the USD valuation is marked unavailable; it is **never** treated as zero. Results are not guaranteed bookable. **Live award searches, mileage transfers, award bookings, online card charges and airline-account OAuth are not implemented.** They require additional contracted APIs and/or payment partners.
 
 ## Requirements and setup
 
-Node.js 22+ and a [Duffel API token](https://duffel.com/docs/guides/getting-started-with-flights). Duffel airline participation and live-mode access vary. A test token permits safe sandbox searches and sandbox orders. Bookings through Duffel balance require the appropriate Duffel account, funds and commercial eligibility. Do not put credentials in code or GitHub.
+Node.js 22+ and a [Duffel API token](https://duffel.com/docs/guides/getting-started-with-flights). For cached awards, optionally set `SEATS_AERO_API_KEY` to an authorized [Seats.aero Partner API key](https://developers.seats.aero/reference/getting-started-p). Seats.aero Pro API use is generally **noncommercial only**; obtain a commercial agreement before incorporating it into a commercial service. Cached searches cover only routes already tracked by Seats.aero, can be stale and do not authorize award bookings. Duffel airline participation and live-mode access vary. A test token permits safe sandbox searches and sandbox orders. Bookings through Duffel balance require the appropriate Duffel account, funds and commercial eligibility. Do not put credentials in code or GitHub.
 
 ```sh
 # Use two distinct random 32-byte hex values (keep both securely out of git).
@@ -21,6 +21,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 export DATA_ENCRYPTION_KEY='first-generated-value'
 export API_TOKEN='second-generated-value'
 export DUFFEL_ACCESS_TOKEN='duffel_test_...'
+# Optional: export SEATS_AERO_API_KEY='your-authorized-key'
 npm start
 ```
 
@@ -62,7 +63,7 @@ curl -H "Authorization: Bearer $API_TOKEN" -H 'Content-Type: application/json' \
 - Discounts from airline loyalty programs may require updating individual offer passengers and fetching the offer again; the quote flow does both when loyalty accounts are saved.
 - The operating **carrier**, not just the marketing brand, is included for each segment, as required in flight offer displays.
 - Mixed-currency cash prices are deliberately **not** compared against USD budgets as if FX were 1:1. A currency adapter is needed for a true global optimization.
-- A miles valuation estimate is **not** guaranteed award availability. Award quotes are user-supplied and are not bookable through this Duffel integration.
+- A miles valuation estimate is **not** guaranteed award availability. Seats.aero cached summaries and user-supplied award quotes are not bookable through this Duffel integration. For round trips, separately query each one-way segment and verify combinability before taking action.
 - Flight offers are time-limited and can change; the checkout rejects changed totals or itineraries instead of silently paying more.
 - Refundability, baggage, government fees, ticketing rules and cancellation terms vary by ticket. Before production checkout, add explicit fare-condition disclosure fetched from the supplier for each booked offer and a compliant customer payment collection flow.
 - Confirmed bookings can be exported as `.ics` calendar files from the browser. Events are **date-only** to avoid assigning an incorrect timezone to airport-local departure times; exact local flight times are included in the event description. Google Calendar OAuth sync remains planned, not currently connected.
@@ -74,3 +75,5 @@ curl -H "Authorization: Bearer $API_TOKEN" -H 'Content-Type: application/json' \
 - [Duffel orders and payments](https://duffel.com/docs/api/v2/orders)
 - [Duffel getting started with flights](https://duffel.com/docs/guides/getting-started-with-flights)
 - [Duffel loyalty programme accounts](https://duffel.com/docs/guides/adding-loyalty-programme-accounts)
+- [Seats.aero cached search API](https://developers.seats.aero/reference/cached-search)
+- [Seats.aero availability object and cabin fields](https://developers.seats.aero/reference/concepts-copy)

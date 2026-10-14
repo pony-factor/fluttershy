@@ -1,11 +1,13 @@
 import { createApplication, httpServer } from './app.js';
 import { createStore, encryptionKey } from './store.js';
 import { createDuffel } from './duffel.js';
+import { createSeatsAero } from './seats.js';
 const env = process.env;
 try {
   const app=createApplication({
     store:createStore({file:env.DATA_FILE || './data/private.enc.json',key:encryptionKey(env.DATA_ENCRYPTION_KEY)}),
-    duffel:createDuffel({token:env.DUFFEL_ACCESS_TOKEN}),apiToken:env.API_TOKEN,
+    duffel:createDuffel({token:env.DUFFEL_ACCESS_TOKEN}),
+    seats:createSeatsAero({key:env.SEATS_AERO_API_KEY}),apiToken:env.API_TOKEN,
     enableLiveBooking:env.ENABLE_LIVE_BOOKING === 'true',
     watchIntervalMinutes:Math.max(30,Number(env.WATCH_POLL_MINUTES)||30)
   });

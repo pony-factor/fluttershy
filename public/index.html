@@ -45,7 +45,8 @@
 </section>
 <section class="cols">
 <section class="panel"><h2>Background price watches</h2><p class="hint">Searches run periodically while the server is running. They do not buy tickets.</p><form id="watch-form" class="inline"><label>Alert under (USD)<input name="max_price" type="number" min="1" value="300" required></label><button>Create watch for last search</button></form><div id="watches"></div></section>
-<section class="panel"><h2>Cash vs. miles</h2><p class="hint">Import a real award quote from an airline/authorized source. Miles redemption is comparison-only until a supported booking connection is added.</p>
+<section class="panel"><h2>Cash vs. miles</h2><p class="hint">Search cached award availability via Seats.aero (requires its API key), or import a verified quote. Award availability can be stale; redemption is comparison-only until a supported airline booking connection is added.</p>
+<button type="button" id="award-search" class="secondary">Search cached award seats</button><p id="award-status" class="status"></p>
 <form id="award-form" class="stack"><div class="split"><label>Program<input name="program" required placeholder="MileagePlus"></label><label>Airline codes<input name="airline_codes" placeholder="UA"></label></div>
 <div class="split"><label>Miles<input name="miles" type="number" min="1" required></label><label>Taxes (USD)<input name="taxes_usd" type="number" min="0" step="0.01" value="0" required></label></div>
 <label>Notes<input name="notes" placeholder="Flight/availability source"></label><button>Add award quote for last search</button></form><div id="awards"></div></section>

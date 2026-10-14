@@ -20,9 +20,10 @@ export function decrypt(wrapped, key) {
 }
 export function createStore({file, key}) {
   const filepath = resolve(file);
-  const initial = () => ({schema:1, profile:profileInput({}), travelers:{}, payment_tokens:{}, accounts:{}, watches:{}, cache:{}, quotes:{}, bookings:{}, awards:{}});
+  const initial = () => ({schema:1, profile:profileInput({}), travelers:{}, payment_tokens:{}, accounts:{}, watches:{}, cache:{}, quotes:{}, bookings:{}, awards:{}, award_cache:{}});
   let state = existsSync(filepath) ? decrypt(JSON.parse(readFileSync(filepath,'utf8')),key) : initial();
   assert(state.schema === 1, 'Unsupported database schema', 500);
+  state.award_cache ||= {};
   function persist(next) {
     mkdirSync(dirname(filepath), {recursive:true, mode:0o700});
     const tmp = `${filepath}.${process.pid}.${randomBytes(5).toString('hex')}.tmp`;

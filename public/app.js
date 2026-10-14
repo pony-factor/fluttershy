@@ -85,6 +85,15 @@ async function quote(o){const s=await api('/api/state');const ids=Object.keys(s.
  });append(box,phrase,lbl,b);root.prepend(box);box.scrollIntoView({behavior:'smooth',block:'center'});
 }
 $('watch-form').onsubmit=e=>{e.preventDefault();run(async()=>{if(!lastQuery)throw Error('Search a route first');await api('/api/watches','POST',{query:lastQuery,max_price:Number(e.currentTarget.elements.max_price.value),currency:'USD'});await reload();msg('Background watch created');});};
+$('award-search').onclick=()=>run(async()=>{
+ if(!lastQuery)throw Error('Search a route first');
+ $('award-status').textContent='Checking cached award availability…';
+ const result=await api('/api/award-search','POST',lastQuery);
+ $('award-status').textContent=`${result.offers.length} award summaries · ${result.cached?'local cache':'Seats.aero cached inventory'}`;
+ const root=$('awards');root.replaceChildren();
+ for(const a of result.offers.slice(0,25))append(root,text('div',`${a.program} · ${a.miles.toLocaleString()} miles · ${a.taxes_amount===null?'taxes unknown':`${format(a.taxes_amount,a.taxes_currency||'USD')} taxes`} · ${a.airline_codes.join(', ')} · ${a.direct?'direct flights available':'connections possible'} · ${a.updated_at||'update time unknown'} · reconfirm with airline`,'item'));
+ if(!result.offers.length)append(root,text('p','No cached award availability matches these preferences.'));
+});
 $('award-form').onsubmit=e=>{e.preventDefault();run(async()=>{if(!lastQuery)throw Error('Search a route first');const f=e.currentTarget.elements;
  await api('/api/awards','POST',{trip:lastQuery,program:f.program.value,miles:Number(f.miles.value),taxes_usd:Number(f.taxes_usd.value),airline_codes:f.airline_codes.value.split(',').map(x=>x.trim()).filter(Boolean),notes:f.notes.value,stops:0});
  const url=new URL('/api/compare',location.origin);for(const k of ['origin','destination','departure_date'])url.searchParams.set(k,lastQuery[k]);

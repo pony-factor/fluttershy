@@ -121,3 +121,27 @@ test('concurrent duplicate confirmations cannot each create an order',async()=>{
   assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);assert.equal(orderCount,1);
  }finally{await s.close();}
 });
+
+test('Seats.aero cached awards preserve unknown tax currencies and normalize cent amounts',async()=>{
+ const {createSeatsAero,normalizeAwardAvailability}=await import('../src/seats.js');
+ const q=searchInput({origin:'JFK',destination:'LAX',departure_date:future,cabin_class:'economy'});
+ const row={ID:'avail_1',Date:future,YAvailable:true,YMileageCost:'25,000',YTotalTaxes:3400,TaxesCurrency:'USD',YAirlines:'AA, AS',YDirect:true,Source:'alaska',UpdatedAt:'2026-10-01T00:00:00Z'};
+ const normalized=normalizeAwardAvailability(row,q);assert.equal(normalized.miles,25000);assert.equal(normalized.taxes_usd,34);
+ assert.equal(normalizeAwardAvailability({...row,TaxesCurrency:undefined},q).taxes_usd,null);
+ assert.equal(normalizeAwardAvailability({...row,Date:'2020-02-01'},q),null);
+ let calls=0;const seats=createSeatsAero({key:'test-api-key',fetchImpl:async(url,opts)=>{
+   calls++;assert.match(url,/origin_airport=JFK/);assert.match(url,/cabins=economy/);
+   assert.equal(opts.headers['Partner-Authorization'],'test-api-key');
+   return {ok:true,json:async()=>({data:[row]})};
+ }});
+ const s=await setup(makeDuffel());s.app.close();await new Promise(r=>s.server.close(r)); // instantiate a new app to inject the mock
+ const app=createApplication({store:s.store,duffel:makeDuffel(),seats,apiToken:'a'.repeat(32)});
+ const server=httpServer(app);await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{
+  const host=`http://127.0.0.1:${server.address().port}`;
+  const request=()=>fetch(host+'/api/award-search',{method:'POST',headers:{Authorization:`Bearer ${'a'.repeat(32)}`},body:JSON.stringify(q)}).then(r=>r.json());
+  const first=await request(),second=await request();
+  assert.equal(first.offers[0].miles,25000);assert.equal(first.offers[0].effective_usd,384);
+  assert.equal(second.cached,true);assert.equal(calls,1);
+ }finally{app.close();await new Promise(r=>server.close(r));await s.close();}
+});
