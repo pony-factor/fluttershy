@@ -1,0 +1,9 @@
+{
+  "name": "fluttershy-flight-concierge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {"start": "node src/server.js", "dev": "node --watch src/server.js", "test": "node --test"},
+  "description": "Local-first flight search, optimization, watchlists and consent-gated Duffel booking"
+}

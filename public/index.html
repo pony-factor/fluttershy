@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fluttershy · Flight concierge</title>
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header><div><span class="mark">✦</span> <strong>Fluttershy</strong><small>Flights with intention</small></div><span id="connection">Connect to begin</span></header>
+<main>
+<section class="hero"><p class="eyebrow">PERSONAL FLIGHT CONCIERGE</p><h1>Go farther.<br><em>Travel your way.</em></h1><p>Search across participating airlines, rank routes for your priorities, track prices, and book only when you choose.</p></section>
+<section class="panel" id="connect"><h2>Connect securely</h2><p>Enter the API token configured on your server. It stays in this browser tab session and is not sent to third parties.</p><form id="connect-form" class="inline"><label>API token<input name="token" type="password" autocomplete="off" required placeholder="Your local API token"></label><button>Connect</button></form></section>
+<div id="workspace" hidden>
+<section class="panel"><div class="between"><h2>Find your flight</h2><span class="hint">Cash fares · Duffel</span></div>
+<form id="search-form" class="fields">
+<label>From (airport / city)<input name="origin" value="JFK" maxlength="3" required></label>
+<label>To (airport / city)<input name="destination" value="LAX" maxlength="3" required></label>
+<label>Depart<input name="departure_date" type="date" required></label>
+<label>Return (optional)<input name="return_date" type="date"></label>
+<label>Adults<input name="adults" type="number" min="1" max="6" value="1" required></label>
+<label>Cabin<select name="cabin_class"><option value="economy">Economy</option><option value="premium_economy">Premium economy</option><option value="business">Business</option><option value="first">First</option></select></label>
+<label>Connections<select name="max_connections"><option value="0">Nonstop only</option><option value="1" selected>Up to one</option><option value="2">Up to two</option></select></label>
+<div class="actions"><button type="submit">Find flights →</button></div>
+</form><p class="status" id="search-status" role="status"></p>
+<div id="results"></div></section>
+<section class="cols">
+<section class="panel"><h2>Your preferences</h2><form id="profile-form" class="stack">
+<label>Optimization<select name="mode"><option value="balanced">Balance price, time and stops</option><option value="cheapest">Lowest price</option><option value="fastest">Shortest trip</option><option value="fewest_stops">Fewest stops</option></select></label>
+<label>Blocked airline codes (comma separated)<input name="excluded_airlines" value="F9" placeholder="F9, NK"></label>
+<label class="check"><input name="avoid_ulcc" type="checkbox" checked> Exclude common ultra-low-cost carriers</label>
+<label class="check"><input name="nonstops_only" type="checkbox"> Nonstop only</label>
+<label>Miles value (cents per point)<input name="miles_cents_per_point" type="number" step="0.1" min="0.01" max="20" value="1.4"></label>
+<label>Max cash budget (USD, optional)<input name="max_cash_usd" type="number" min="1" placeholder="No cap"></label>
+<button>Save preferences</button></form></section>
+<section class="panel"><h2>Traveler vault</h2><p class="hint">Encrypted at rest. Add adult passengers for checkout; account numbers are never echoed.</p>
+<form id="traveler-form" class="stack">
+<label>Traveler ID<input name="id" value="me" required></label>
+<div class="split"><label>Given name<input name="given_name" required></label><label>Family name<input name="family_name" required></label></div>
+<div class="split"><label>Date of birth<input name="born_on" type="date" required></label><label>Gender (airline API)<select name="gender"><option value="f">F</option><option value="m">M</option></select></label></div>
+<div class="split"><label>Email<input name="email" type="email" required></label><label>Phone (E.164)<input name="phone_number" placeholder="+12025550123" required></label></div>
+<label>Frequent-flyer accounts (optional; `BA:12345, UA:98765`)<input name="loyalty_accounts" placeholder="BA:12345, UA:98765"></label>
+<button>Save traveler</button></form>
+<div id="travelers"></div></section>
+</section>
+<section class="cols">
+<section class="panel"><h2>Background price watches</h2><p class="hint">Searches run periodically while the server is running. They do not buy tickets.</p><form id="watch-form" class="inline"><label>Alert under (USD)<input name="max_price" type="number" min="1" value="300" required></label><button>Create watch for last search</button></form><div id="watches"></div></section>
+<section class="panel"><h2>Cash vs. miles</h2><p class="hint">Import a real award quote from an airline/authorized source. Miles redemption is comparison-only until a supported booking connection is added.</p>
+<form id="award-form" class="stack"><div class="split"><label>Program<input name="program" required placeholder="MileagePlus"></label><label>Airline codes<input name="airline_codes" placeholder="UA"></label></div>
+<div class="split"><label>Miles<input name="miles" type="number" min="1" required></label><label>Taxes (USD)<input name="taxes_usd" type="number" min="0" step="0.01" value="0" required></label></div>
+<label>Notes<input name="notes" placeholder="Flight/availability source"></label><button>Add award quote for last search</button></form><div id="awards"></div></section>
+</section>
+<section class="cols"><section class="panel"><h2>Token references</h2><p class="hint">Save a payment processor token or linked-account reference, never a card number, CVV or password. These references are not charged by Duffel until a supported adapter is configured.</p><form id="token-form" class="stack"><label>Reference ID<input name="id" required placeholder="primary-card"></label><label>Provider<input name="provider" required placeholder="Stripe"></label><label>Display label<input name="label" required placeholder="Everyday card"></label><label>Token reference<input name="token_reference" required placeholder="pm_…"></label><label>Last four (optional)<input name="last4" maxlength="4"></label><button>Save token reference</button></form><div id="tokens"></div></section>
+<section class="panel"><h2>Bookings</h2><p class="hint">Every booking requires a reviewed quote and an exact-price confirmation. An uncertain provider response is never retried automatically.</p><div id="bookings"></div></section></section>
+</div>
+<p class="status global" id="message" role="status"></p>
+</main><footer>Fluttershy · Self-hosted concierge · Cash booking requires an approved Duffel account and balance.</footer>
+</body></html>
