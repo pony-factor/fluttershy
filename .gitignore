@@ -4,3 +4,7 @@ data/
 *.log
 .DS_Store
 coverage/
+.vercel/
+.env.local
+.env.production
+.env.preview

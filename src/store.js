@@ -18,10 +18,10 @@ export function decrypt(wrapped, key) {
   decipher.setAuthTag(Buffer.from(wrapped.tag,'base64'));
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(wrapped.ciphertext,'base64')),decipher.final()]).toString('utf8'));
 }
+export function initialState() {return {schema:1, profile:profileInput({}), travelers:{}, payment_tokens:{}, accounts:{}, watches:{}, cache:{}, quotes:{}, bookings:{}, awards:{}, award_cache:{}};}
 export function createStore({file, key}) {
   const filepath = resolve(file);
-  const initial = () => ({schema:1, profile:profileInput({}), travelers:{}, payment_tokens:{}, accounts:{}, watches:{}, cache:{}, quotes:{}, bookings:{}, awards:{}, award_cache:{}});
-  let state = existsSync(filepath) ? decrypt(JSON.parse(readFileSync(filepath,'utf8')),key) : initial();
+  let state = existsSync(filepath) ? decrypt(JSON.parse(readFileSync(filepath,'utf8')),key) : initialState();
   assert(state.schema === 1, 'Unsupported database schema', 500);
   state.award_cache ||= {};
   function persist(next) {

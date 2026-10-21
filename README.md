@@ -77,3 +77,48 @@ curl -H "Authorization: Bearer $API_TOKEN" -H 'Content-Type: application/json' \
 - [Duffel loyalty programme accounts](https://duffel.com/docs/guides/adding-loyalty-programme-accounts)
 - [Seats.aero cached search API](https://developers.seats.aero/reference/cached-search)
 - [Seats.aero availability object and cabin fields](https://developers.seats.aero/reference/concepts-copy)
+
+## Vercel deployment (single-user, deliberately locked down)
+
+Fluttershy includes a serverless adapter (`api/index.js`), an AES-256-GCM-encrypted
+Upstash Redis datastore and an authenticated Vercel Cron endpoint. **Do not deploy until
+the required secrets and private Upstash database are configured.** Missing configuration
+fails closed with HTTP 503; the public static Connect page may still load.
+
+1. Create a private Upstash Redis database in the same region as Vercel. Its
+   **standard write-enabled** REST token is needed for atomic state updates.
+2. In Vercel's **Production** environment configure `UPSTASH_REDIS_REST_URL`,
+   `UPSTASH_REDIS_REST_TOKEN`, `DATA_ENCRYPTION_KEY` (64 hex characters),
+   `API_TOKEN` (random 32-byte hex), `CRON_SECRET` (a *different* random 32-byte
+   hex) and `DUFFEL_ACCESS_TOKEN` (start with a sandbox token).
+   Generate independent values locally with the `node:crypto` commands above.
+   Keep Redis credentials and encryption keys off the frontend and out of Git.
+   Optional `SEATS_AERO_API_KEY` supports cached mileage results.
+   Optionally set `REDIS_STATE_KEY` to isolate separate deployments.
+3. Import the repo into Vercel with the **Other/Node** preset, root `./`,
+   no build command and no output directory override. `public/` supplies
+   static assets, while `/api/*` is served by the Node.js function.
+   Do not give Preview the same secrets or state key as Production.
+4. Enable Vercel deployment protection / Vercel Authentication for the
+   **entire site** when available. Enter the independent `API_TOKEN` in
+   Fluttershy's Connect form. This is a **single-user** access token held in
+   browser session storage, not multi-user authentication or SSO.
+5. **Hosted booking is OFF by default.** To explicitly opt in after
+   completing supplier, funding, legal, payment and fare-disclosure reviews,
+   set BOTH `ENABLE_LIVE_BOOKING=true` and `ALLOW_HOSTED_BOOKING=true`.
+   Bookings still use Duffel **balance**, not a payment card or provider token.
+6. Vercel calls `GET /api/cron` with the header
+   `Authorization: Bearer <CRON_SECRET>`. Durable per-watch claims prevent
+   overlapping invocations. On the **Vercel Hobby plan** cron can run only
+   **once a day**. This project schedules it for **09:00 UTC**, with
+   within-hour execution variance. The 30-minute local timer does **not**
+   run in hosted functions; more frequent schedules require an eligible
+   Vercel plan. Manually refreshing individual watches remains possible.
+
+The cloud vault is encrypted before data leaves the function. Redis Lua
+compare-and-set protects concurrent updates and prevents duplicate booking
+claims. Keep a securely backed-up encryption key: replacing it makes prior
+state unreadable. Arrange separate protected backups and a tested restore
+procedure. This is not yet a multi-user, audited or fully compliant
+travel-payment service. Validate in a Duffel test environment before
+any real purchase.
